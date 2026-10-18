@@ -2,8 +2,6 @@ name: Build APK
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -12,6 +10,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Find project (unzips if you uploaded a zip)
+        run: |
+          if [ -z "$(find . -name settings.gradle.kts -not -path './.git/*' | head -n1)" ]; then
+            for z in $(find . -maxdepth 3 -name '*.zip' -not -path './.git/*'); do
+              echo "Unzipping $z"
+              unzip -oq "$z"
+            done
+          fi
+          SETTINGS=$(find . -name settings.gradle.kts -not -path './.git/*' | head -n1)
+          if [ -z "$SETTINGS" ]; then
+            echo "::error::No settings.gradle.kts found in the repo. Upload the project files, not just a zip."
+            find . -not -path './.git/*' | head -50
+            exit 1
+          fi
+          DIR=$(dirname "$SETTINGS")
+          echo "Project directory: $DIR"
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -25,11 +41,12 @@ jobs:
           gradle-version: 8.9
 
       - name: Build debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: SecretLauncher-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
